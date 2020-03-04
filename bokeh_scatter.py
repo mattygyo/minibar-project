@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from bokeh.io import curdoc
 from bokeh.layouts import column, layout
-from bokeh.models import ColumnDataSource, Div, Select, Slider, TextInput, LinearColorMapper, ColorBar, CategoricalColorMapper, Legend, LegendItem
+from bokeh.models import ColumnDataSource, Div, Select, Slider, TextInput, LinearColorMapper, ColorBar, CategoricalColorMapper, Legend, LegendItem, CustomJS
 from bokeh.plotting import figure
 from bokeh.transform import jitter
 from bokeh.palettes import Reds9, Turbo256, d3
@@ -53,6 +53,8 @@ color_axis_map = {
 desc = Div(sizing_mode="stretch_width")
 
 # Create Input controls
+pack_size_options = list(df['short_pack_size'].unique())
+pack_size_options.append("All")
 container_options = list(df['container_type'].unique())
 hierarchy_options = list(df['hierarchy_type'].unique())
 hierarchy_options.append("All")
@@ -62,14 +64,16 @@ sub_hierarchy_options.append("All")
 min_abv = Slider(title="ABV", start=0, end=20, value=1, step=1)
 container_check = CheckboxButtonGroup(labels=container_options, active=[0, 2])
 brand = TextInput(title="Brand of Beer")
+pack_size = Select(title="Pack Size", value="All", options=pack_size_options)
 hierarchy = Select(title='Category', value="All", options=hierarchy_options)
 sub_hierarchy = Select(title='Sub-Category', value="All", options=sub_hierarchy_options)
 y_axis = Select(title="Y Axis", options=sorted(axis_map.keys()), value="Oz of Alcohol per $")
-x_axis = Select(title="X Axis", options=sorted(axis_map.keys()), value="Pack Size")
+x_axis = Select(title="X Axis", options=sorted(axis_map.keys()), value="ABV")
 circle_color = Select(title="Circle Color", options=sorted(color_axis_map.keys()), value="Price")
 
 # Create Column Data Source that will be used by the plot
 source = ColumnDataSource(data=dict(df))
+table_source = ColumnDataSource(data=dict(df))
 
 TOOLTIPS=[
     ("Name", "@name"),
@@ -106,7 +110,7 @@ def cat_linear_color_toggle():
 p = figure(background_fill_color='black', background_fill_alpha=0.5,
              border_fill_color='gray', border_fill_alpha=0.25,
              plot_height=250, plot_width=500, title="", 
-             toolbar_location='below', tooltips=TOOLTIPS)
+             toolbar_location='below', tooltips=TOOLTIPS,tools="box_select,reset,help")
 c = p.circle(x='x', y='y', source=source, size='price', 
              fill_color={"field":color_axis_map[circle_color.value], "transform":cat_linear_color_toggle()}, 
              line_color=None, fill_alpha="alpha"#, legend_field=color_axis_map[circle_color.value]
@@ -123,21 +127,23 @@ legend.visible = False
 
 columns = [
     TableColumn(field="name", title='Name'),
+    TableColumn(field="type", title='Type'),
     TableColumn(field="container_type", title='Container Type'),
     TableColumn(field="short_pack_size", title='Pack Size'),
     TableColumn(field="short_volume", title='Volume'),
     TableColumn(field="price", title='Price'),
-    TableColumn(field="type", title='Type'),
-    TableColumn(field="cost per oz", title='Cost/Oz.'),
-    TableColumn(field="oz of alcohol per dollar", title='Oz. of Alcohol per $'),
+    TableColumn(field="alcohol_pct", title='ABV'),
+    TableColumn(field="cost per oz", title='Cost per Oz'),
+    TableColumn(field="oz of alcohol per dollar", title='Oz of Alcohol per $'),
     ]
 
-data_table = DataTable(source = source, columns = columns)
+data_table = DataTable(source = table_source, columns = columns, selectable = False)
 
 def select_movies():
     container_check_val = container_check.active
     abv_val = min_abv.value
     brand_val = brand.value
+    pack_size_val = pack_size.value
     brand_val = brand_val.lower().strip()
     hierarchy_val = hierarchy.value
     sub_hierarchy_val = sub_hierarchy.value
@@ -151,6 +157,8 @@ def select_movies():
         selected = selected[selected.container_type.isin(container_name_list)==True]
     if (brand_val != ""):
         selected = selected[selected.brand.str.contains(brand_val)==True]
+    if (pack_size_val != "All"):
+        selected = selected[selected.short_pack_size.str.contains(pack_size_val)==True]
     if (hierarchy_val != "All"):
         selected = selected[selected.hierarchy_type.str.contains(hierarchy_val)==True]
     if (sub_hierarchy_val != "All"):
@@ -191,6 +199,7 @@ def update():
         {"oz of alcohol per dollar": df1["oz of alcohol per dollar"],
         "cost per oz": df1["cost per oz"]}
         )
+    table_source.data = source.data
         
 def show_hide_legend(attr, old, new):
     color_val = color_axis_map[circle_color.value]      
@@ -202,10 +211,39 @@ def show_hide_legend(attr, old, new):
         p.legend.visible = True
         bar.visible = False
     
+source.selected.js_on_change('indices', CustomJS(args=dict(source=source, table_source=table_source), code="""
+        console.log(source.data)
+        var inds = cb_obj.indices;
+        var d1 = source.data;
+        
+        if(inds.length == 0){
+            table_source.data = d1
+        }
+        else{
+        d2 = {'name': [], 'type': [], 'container_type': [], 'short_pack_size': [], 'short_volume': [], 
+        'price': [], 'alcohol_pct': [], 'cost per oz': [], 'oz of alcohol per dollar': []}
+        
+        for (var i = 0; i < inds.length; i++) {
+            d2['name'].push(d1['name'][inds[i]])
+            d2['type'].push(d1['type'][inds[i]])
+            d2['container_type'].push(d1['container_type'][inds[i]])
+            d2['short_pack_size'].push(d1['short_pack_size'][inds[i]])
+            d2['short_volume'].push(d1['short_volume'][inds[i]])
+            d2['price'].push(d1['price'][inds[i]])
+            d2['alcohol_pct'].push(d1['alcohol_pct'][inds[i]])
+            d2['cost per oz'].push(d1['cost per oz'][inds[i]])
+            d2['oz of alcohol per dollar'].push(d1['oz of alcohol per dollar'][inds[i]])
+        }
+        table_source.data = d2
+        }
+    """)
+)
 
-circle_color.on_change('value',show_hide_legend)
 
-controls = [min_abv, container_check, brand, hierarchy, sub_hierarchy, x_axis, y_axis, circle_color]
+
+circle_color.on_change('value', show_hide_legend)
+
+controls = [min_abv, container_check, brand, pack_size, hierarchy, sub_hierarchy, x_axis, y_axis, circle_color]
 
 for control in controls:
     if (control==container_check):

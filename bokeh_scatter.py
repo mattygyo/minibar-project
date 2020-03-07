@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Feb  1 16:11:50 2020
-
-@author: matthewgrierson
-"""
-
 import os
-import numpy as np
 import pandas as pd
 from bokeh.io import curdoc
 from bokeh.layouts import column, layout
@@ -18,9 +9,6 @@ from bokeh.palettes import Reds9, Turbo256, d3
 from bokeh.models.widgets import CheckboxButtonGroup, DataTable, TableColumn
 
 df = pd.read_csv('beer_data.csv')
-
-df["color"] = np.where(df["alcohol_pct"] > 5, "orange", "grey")
-df["alpha"] = np.where(df["alcohol_pct"] > 0, 0.9, 0.25)
 df['brand'] = df['brand'].str.lower().str.strip()
 df['hierarchy_type'] = ['uncat' if str(x)=='nan' else x for x in df['hierarchy_type']]
 df['hierarchy_subtype'] = ['uncat' if str(x)=='nan' else x for x in df['hierarchy_subtype']]
@@ -49,8 +37,7 @@ color_axis_map = {
     "Cost per Oz": "cost per oz"
 }
 
-
-desc = Div(sizing_mode="stretch_width")
+desc = Div(text=open("description.html").read(), sizing_mode="stretch_width")
 
 # Create Input controls
 pack_size_options = list(df['short_pack_size'].unique())
@@ -60,8 +47,10 @@ hierarchy_options = list(df['hierarchy_type'].unique())
 hierarchy_options.append("All")
 sub_hierarchy_options = list(df['hierarchy_subtype'].unique())
 sub_hierarchy_options.append("All")
-#---------------------------------------------------------------------------
+
+# Create Widget Filters
 min_abv = Slider(title="ABV", start=0, end=20, value=1, step=1)
+jitter_amt = Slider(title="Jitter", start=0, end=1.0, value=0.1, step=0.1)
 container_check = CheckboxButtonGroup(labels=container_options, active=[0, 2])
 brand = TextInput(title="Brand of Beer")
 pack_size = Select(title="Pack Size", value="All", options=pack_size_options)
@@ -71,11 +60,12 @@ y_axis = Select(title="Y Axis", options=sorted(axis_map.keys()), value="Oz of Al
 x_axis = Select(title="X Axis", options=sorted(axis_map.keys()), value="ABV")
 circle_color = Select(title="Circle Color", options=sorted(color_axis_map.keys()), value="Price")
 
-# Create Column Data Source that will be used by the plot
+# Create Column Data Sources that will be used by the plot and table
 source = ColumnDataSource(data=dict(df))
 table_source = ColumnDataSource(data=dict(df))
 
-TOOLTIPS=[
+#Create the tooltips
+tooltips=[
     ("Name", "@name"),
     ("Brand", "@brand"),
     ("Price $", "@price"),
@@ -84,16 +74,19 @@ TOOLTIPS=[
     ("Category Sub-type", "@hierarchy_subtype")
 ]
 
+#Create the initial LinearColorScale so it can be updated dynamically later
 Reds9.reverse()
 cmap = LinearColorMapper(palette=Reds9, 
                              low = min(df[color_axis_map[circle_color.value]]), 
                              high = max(df[color_axis_map[circle_color.value]]))
 
+#Rescale linear colormap
 def rescale_color(cmap, df):
     cmap.low = min(df[color_axis_map[circle_color.value]])
     cmap.high = max(df[color_axis_map[circle_color.value]])
     return cmap
 
+#Redraw categorical color maps
 def cat_linear_color_toggle():
     color_val = color_axis_map[circle_color.value]
     if df[color_val].dtype == 'float64' or df[color_val].dtype == 'int64':
@@ -110,10 +103,10 @@ def cat_linear_color_toggle():
 p = figure(background_fill_color='black', background_fill_alpha=0.5,
              border_fill_color='gray', border_fill_alpha=0.25,
              plot_height=250, plot_width=500, title="", 
-             toolbar_location='below', tooltips=TOOLTIPS,tools="box_select,reset,help")
-c = p.circle(x='x', y='y', source=source, size='price', 
+             toolbar_location='below', tooltips=tooltips,tools="box_select,reset,help")
+c = p.circle(x=jitter('x', width=jitter_amt.value, range=p.x_range), y=jitter('y', width=jitter_amt.value, range=p.y_range), source=source, size='price', 
              fill_color={"field":color_axis_map[circle_color.value], "transform":cat_linear_color_toggle()}, 
-             line_color=None, fill_alpha="alpha"#, legend_field=color_axis_map[circle_color.value]
+             line_color=None
              )
 bar = ColorBar(background_fill_color='gray', background_fill_alpha=0,
                    color_mapper=cmap#cat_linear_color_toggle()
@@ -121,9 +114,8 @@ bar = ColorBar(background_fill_color='gray', background_fill_alpha=0,
 p.add_layout(bar, "right")
 
 legend = Legend(items=[LegendItem(label=dict(field="x"), renderers=[c])], 
-                location=(10, -30),background_fill_alpha=0)
+                location=(10, -30),background_fill_alpha=0, visible=False)
 p.add_layout(legend, 'right')
-legend.visible = False
 
 columns = [
     TableColumn(field="name", title='Name'),
@@ -139,7 +131,7 @@ columns = [
 
 data_table = DataTable(source = table_source, columns = columns, selectable = False)
 
-def select_movies():
+def select_beers():
     container_check_val = container_check.active
     abv_val = min_abv.value
     brand_val = brand.value
@@ -147,6 +139,7 @@ def select_movies():
     brand_val = brand_val.lower().strip()
     hierarchy_val = hierarchy.value
     sub_hierarchy_val = sub_hierarchy.value
+
     selected = df[df['alcohol_pct'] > abv_val]
     if (container_check_val != 4):
         container_name_list = []
@@ -166,22 +159,22 @@ def select_movies():
     return selected
 
 def update():
-    df1 = select_movies()
+    df1 = select_beers()
     x_name = axis_map[x_axis.value]
     y_name = axis_map[y_axis.value]
     p.xaxis.axis_label = x_axis.value
     p.yaxis.axis_label = y_axis.value
     p.title.text = "%d beers selected" % len(df1)
+    
     color_select = color_axis_map[circle_color.value]
-
     c.glyph.fill_color = {"field":color_axis_map[circle_color.value], "transform":cat_linear_color_toggle()}
     p.legend.items[0].label= {'field': color_axis_map[circle_color.value]}
+    
     if df1[color_select].dtype in (float, int):
         bar.color_mapper = rescale_color(cmap, df1)
     source.data = dict(
         x=df1[x_name],
         y=df1[y_name],
-        color=df1["color"],
         name=df1["name"],
         brand=df1["brand"],
         price=df1["price"],
@@ -189,7 +182,6 @@ def update():
         hierarchy_type=df1["hierarchy_type"],
         hierarchy_subtype=df1["hierarchy_subtype"],
         short_pack_size=df1["short_pack_size"],
-        alpha=df1["alpha"],
         alcohol_pct = df1["alcohol_pct"],
         short_volume = df1["short_volume"],
         supplier_id = df1["supplier_id"],
@@ -200,13 +192,15 @@ def update():
         "cost per oz": df1["cost per oz"]}
         )
     table_source.data = source.data
+    
+    c.glyph.x = jitter('x', width=jitter_amt.value, range=p.x_range)
+    c.glyph.y = jitter('y', width=jitter_amt.value, range=p.y_range)
         
 def show_hide_legend(attr, old, new):
     color_val = color_axis_map[circle_color.value]      
     if df[color_val].dtype in (float, int):
         p.legend.visible = False
         bar.visible = True
-        #bar.color_mapper = {cat_linear_color_toggle()}
     else:
         p.legend.visible = True
         bar.visible = False
@@ -239,11 +233,9 @@ source.selected.js_on_change('indices', CustomJS(args=dict(source=source, table_
     """)
 )
 
-
-
 circle_color.on_change('value', show_hide_legend)
 
-controls = [min_abv, container_check, brand, pack_size, hierarchy, sub_hierarchy, x_axis, y_axis, circle_color]
+controls = [min_abv, jitter_amt, container_check, brand, pack_size, hierarchy, sub_hierarchy, x_axis, y_axis, circle_color]
 
 for control in controls:
     if (control==container_check):

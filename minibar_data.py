@@ -47,5 +47,9 @@ for x in range(1,item_count+1):
             variant_df = variant_df.append(core_data, ignore_index=True)
         beer_df = beer_df.append(variant_df)
 
-
 beer_df.to_csv('beer_data.csv')
+
+
+
+import missingno as msno
+msno.matrix(beer_df, figsize=(12, 5))

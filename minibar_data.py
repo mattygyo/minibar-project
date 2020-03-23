@@ -18,7 +18,7 @@ def get_token():
     bearer_token = soup.findAll(attrs={"name":"access-token"})[0]['content']
     return bearer_token
 
-url = 'https://minibardelivery.com/api/v2/supplier/86,96,170,193,210,229,261,296,327,378,382,386,388,394,410,417,427,435,479,480,481,510,517,536,539,541,562,565,572,653,686,687,698,791,803,809,849/product_groupings?base=hierarchy_category&hierarchy_category=beer&sort=popularity&sort_direction=desc&facet_list[]=selected_supplier&facet_list[]=hierarchy_category&facet_list[]=hierarchy_type&facet_list[]=hierarchy_subtype&facet_list[]=country&facet_list[]=volume&facet_list[]=container_type&facet_list[]=delivery_type&facet_list[]=price&address_id=&coords[latitude]=40.69202170000001&coords[longitude]=-73.9847946&address[address1]=100 Willoughby Street&address[city]=Brooklyn&address[state]=NY&address[zip_code]=11201&per_page=20&shipping_state=NY&page='
+url = '<minibar XHR url goes here>'
 bearer_token = get_token()
 header = {'Authorization': 'bearer {}'.format(bearer_token)}
 item_count = round(requests.get(url+str(1), headers=header).json()['count']/20)
